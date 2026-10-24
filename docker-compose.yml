@@ -52,3 +52,18 @@ services:
       - "3100:3001"                   # 本機用 http://localhost:3100 連 Mockoon
     volumes:
       - ./mockoon/orders-api.json:/data/orders-api.json:ro
+
+  # ---- 選用工具：LDAP 圖形化管理介面 ----
+  # 啟動方式：docker compose --profile tools up -d
+  # 開啟 http://localhost:8389，Login DN: cn=admin,dc=example,dc=org / Password: admin
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    container_name: phpldapadmin
+    profiles: ["tools"]
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: openldap
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "8389:80"
+    depends_on:
+      - openldap

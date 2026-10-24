@@ -21,10 +21,14 @@
 7. [深入解析](#7-深入解析)
 8. [不用瀏覽器，用 curl 觀察 token](#8-不用瀏覽器用-curl-觀察-token)
 9. [重要設定檔導覽](#9-重要設定檔導覽)
-10. [常見問題 FAQ](#10-常見問題-faq)
-11. [延伸練習](#11-延伸練習)
-12. [清理環境](#12-清理環境)
-13. [參考資料](#13-參考資料)
+10. [元件安裝與使用教學：OpenLDAP、Keycloak、Mockoon](#10-元件安裝與使用教學openldapkeycloakmockoon)
+    - [10.1 OpenLDAP](#101-openldap)
+    - [10.2 Keycloak](#102-keycloak)
+    - [10.3 Mockoon](#103-mockoon)
+11. [常見問題 FAQ](#11-常見問題-faq)
+12. [延伸練習](#12-延伸練習)
+13. [清理環境](#13-清理環境)
+14. [參考資料](#14-參考資料)
 
 ---
 
@@ -43,6 +47,7 @@
 | **授權（誰能做什麼）** | `alice` 可以呼叫 `/api/admin/**`，`bob` 會得到 `403` |
 | **企業常見架構** | 使用者帳號放在 **LDAP**，Keycloak 透過 **User Federation** 讀取 |
 | **Mock API** | 用 Mockoon 快速模擬一個「需要 Bearer token」的後端 |
+| **元件本身怎麼用** | OpenLDAP、Keycloak、Mockoon 的安裝方式、管理介面與常用指令（第 10 節） |
 
 ---
 
@@ -141,7 +146,7 @@ flowchart LR
 | 工具 | 版本 | 確認指令 |
 |---|---|---|
 | Docker + Docker Compose | Docker 24+ / Compose v2+ | `docker compose version` |
-| Java (JDK) | **21** 以上 | `java -version` |
+| Java (JDK) | **21** 以上（macOS：`brew install openjdk@21`；或用 [SDKMAN](https://sdkman.io) `sdk install java 21-tem`） | `java -version` |
 | Maven | 不用另外裝，專案內附 `mvnw` wrapper | - |
 | curl、python3 | macOS / Linux 內建 | `curl --version` |
 
@@ -495,7 +500,7 @@ curl -i http://localhost:8082/api/profile -H "Authorization: Bearer ${TOKEN}x"
 | `editMode` | `READ_ONLY` | 在 Keycloak 改資料不會寫回 LDAP |
 | `importEnabled` | `true` | 登入過的使用者會被快取到 Keycloak DB |
 
-直接查 LDAP（macOS / Linux 內建 `ldapsearch`）：
+直接查 LDAP（macOS / Linux 內建 `ldapsearch`；更多指令見 [10.1 節](#101-openldap)）：
 
 ```bash
 # 查 alice
@@ -511,7 +516,7 @@ ldapsearch -x -H ldap://localhost:1389 -b ou=groups,dc=example,dc=org \
 
 Mockoon 是一個「不用寫程式就能做出假 API」的工具，很適合：前端開發時後端還沒好、或像本專案一樣**快速模擬一個需要 token 的下游服務**。
 
-`mockoon/orders-api.json` 定義了 `GET /orders`：
+`mockoon/orders-api.json` 定義了 `GET /orders`（另有 `GET /orders/:id` 示範路徑參數，見 [10.3 節](#103-mockoon)）：
 
 - **規則**：`Authorization` header 符合正規表示式 `^Bearer .+` → 回 200 與訂單資料
 - 否則 → 預設回應 401 + `WWW-Authenticate: Bearer realm="orders-api"`
@@ -585,13 +590,13 @@ curl -s -X POST http://localhost:8180/realms/demo/protocol/openid-connect/token 
 oauth-oidc-tutorial/
 ├── README.md                      ← 你正在看的文件
 ├── oauth-oidc-arch.png            ← 架構圖
-├── docker-compose.yml             ← OpenLDAP + Keycloak + Mockoon
+├── docker-compose.yml             ← OpenLDAP + Keycloak + Mockoon（+ 選用的 phpLDAPadmin）
 ├── openldap/
 │   └── bootstrap.ldif             ← alice / bob 與 admins / users 群組
 ├── keycloak/
 │   └── realm-demo.json            ← realm、clients、LDAP federation、mappers
 ├── mockoon/
-│   └── orders-api.json            ← Mock API 定義（/health、/orders）
+│   └── orders-api.json            ← Mock API 定義（/health、/orders、/orders/:id）
 ├── scripts/                       ← curl 小工具
 ├── client-app/                    ← 架構圖的 Client App（port 8081）
 │   ├── pom.xml
@@ -656,7 +661,497 @@ spring.security.oauth2.resourceserver.jwt:
 
 ---
 
-## 10. 常見問題 FAQ
+## 10. 元件安裝與使用教學：OpenLDAP、Keycloak、Mockoon
+
+前面的章節把三個元件當成黑盒子。這一節把每個元件拆開來講：**它是什麼、怎麼安裝、平常怎麼操作**。
+本專案用 Docker Compose 一次啟動它們，但也會告訴你不用 Docker 時怎麼裝。
+
+### 10.1 OpenLDAP
+
+#### 10.1.1 LDAP 是什麼？
+
+LDAP（Lightweight Directory Access Protocol）是一種「查詢目錄」的協定，OpenLDAP 是它最常見的開源實作。
+你可以把它想成一本**樹狀的電話簿**：公司在最上面，底下分部門，部門底下是員工。企業裡的 AD（Active Directory）也是用 LDAP 協定。
+
+```
+dc=example,dc=org                         ← 根（公司）
+├── ou=people                             ← 組織單位：使用者
+│   ├── uid=alice                         ← 一筆 entry
+│   └── uid=bob
+└── ou=groups                             ← 組織單位：群組
+    ├── cn=admins   (member: uid=alice)
+    └── cn=users    (member: uid=alice, uid=bob)
+```
+
+幾個一定要認識的名詞：
+
+| 名詞 | 意思 | 範例 |
+|---|---|---|
+| **Entry** | 一筆資料（一個節點） | alice 這個人 |
+| **DN**（Distinguished Name） | entry 的完整路徑，從自己往上寫到根 | `uid=alice,ou=people,dc=example,dc=org` |
+| **dc / ou / cn / uid** | DN 裡的屬性名稱：domain component、organizational unit、common name、user id | `dc=example`、`ou=people`、`cn=admins`、`uid=alice` |
+| **objectClass** | entry 的「型別」，決定它可以有哪些屬性 | `inetOrgPerson`（人）、`groupOfNames`（群組） |
+| **Bind** | 用某個 DN + 密碼「登入」LDAP。**密碼對不對就是看 bind 成不成功**，Keycloak 就是這樣驗證密碼的 | `-D uid=alice,... -w alice123` |
+| **LDIF** | 用純文字描述 entry 的格式，用來匯入 / 修改資料 | `openldap/bootstrap.ldif` |
+| **Base DN** | 搜尋的起點 | `-b dc=example,dc=org` |
+
+#### 10.1.2 安裝方式
+
+**方式 A：Docker（本專案採用）**
+
+`docker-compose.yml` 裡的 `openldap` 服務用的是 `osixia/openldap:1.5.0` 這個 image，重點設定：
+
+```yaml
+openldap:
+  image: osixia/openldap:1.5.0
+  command: ["--copy-service"]          # 讓 image 讀取我們掛進去的自訂 LDIF
+  environment:
+    LDAP_ORGANISATION: "Example Org"
+    LDAP_DOMAIN: "example.org"         # 自動變成 Base DN：dc=example,dc=org
+    LDAP_ADMIN_PASSWORD: "admin"       # 管理者 cn=admin,dc=example,dc=org 的密碼
+    LDAP_TLS: "false"                  # 教學用，關掉 TLS
+  ports:
+    - "1389:389"                       # 本機用 1389 連，避免和系統 389 衝突
+  volumes:
+    - ./openldap/bootstrap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif:ro
+```
+
+> **注意**：bootstrap LDIF 只會在**第一次建立資料庫**時載入。改了 `bootstrap.ldif` 要用 `docker compose down -v` 刪掉資料再 `up`。
+
+單獨啟動（不用 compose）也可以：
+
+```bash
+docker run -d --name openldap -p 1389:389 \
+  -e LDAP_ORGANISATION="Example Org" -e LDAP_DOMAIN=example.org -e LDAP_ADMIN_PASSWORD=admin -e LDAP_TLS=false \
+  -v "$PWD/openldap/bootstrap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif:ro" \
+  osixia/openldap:1.5.0 --copy-service
+```
+
+**方式 B：macOS（Homebrew）**
+
+macOS 內建 `ldapsearch` 等**客戶端**工具，不用另外裝。如果想在本機跑 LDAP **伺服器**：
+
+```bash
+brew install openldap
+# 伺服器程式是 slapd，設定檔在 $(brew --prefix)/etc/openldap/slapd.conf
+```
+
+**方式 C：Ubuntu / Debian**
+
+```bash
+sudo apt update
+sudo apt install slapd ldap-utils        # slapd = 伺服器，ldap-utils = ldapsearch 等指令
+sudo dpkg-reconfigure slapd              # 互動式設定 domain 與管理者密碼
+```
+
+#### 10.1.3 常用操作（指令都可以直接對本專案的 LDAP 執行）
+
+每個指令都會用到同一組「連線參數」，先記起來：
+
+```
+-x                                  用簡單驗證（帳號密碼），不用 SASL
+-H ldap://localhost:1389            伺服器位址
+-D cn=admin,dc=example,dc=org       用哪個身分 bind（管理者）
+-w admin                            bind 的密碼
+```
+
+**查詢（ldapsearch）**
+
+```bash
+# 列出整棵樹
+ldapsearch -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin -b dc=example,dc=org
+
+# 找某個使用者，只顯示幾個欄位
+ldapsearch -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin \
+  -b ou=people,dc=example,dc=org "(uid=alice)" cn mail
+
+# 找 admins 群組有哪些成員
+ldapsearch -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin \
+  -b ou=groups,dc=example,dc=org "(cn=admins)" member
+
+# 找「email 是 example.org 結尾」的所有人（LDAP filter 語法）
+ldapsearch -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin \
+  -b ou=people,dc=example,dc=org "(mail=*@example.org)" uid
+```
+
+**新增使用者（ldapadd）**：LDIF 從標準輸入餵進去
+
+```bash
+ldapadd -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin <<'LDIF'
+dn: uid=carol,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: carol
+cn: Carol Lin
+sn: Lin
+givenName: Carol
+mail: carol@example.org
+userPassword: carol123
+LDIF
+```
+
+**把使用者加入群組（ldapmodify）**
+
+```bash
+ldapmodify -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin <<'LDIF'
+dn: cn=users,ou=groups,dc=example,dc=org
+changetype: modify
+add: member
+member: uid=carol,ou=people,dc=example,dc=org
+LDIF
+```
+
+**改密碼（ldappasswd）**
+
+```bash
+ldappasswd -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin \
+  -s carol456 uid=carol,ou=people,dc=example,dc=org
+```
+
+**驗證密碼對不對（ldapwhoami）**：這就是 Keycloak 驗證密碼時做的事，用使用者自己的 DN 去 bind
+
+```bash
+ldapwhoami -x -H ldap://localhost:1389 -D uid=carol,ou=people,dc=example,dc=org -w carol456
+# 成功會印出 dn:uid=carol,ou=people,dc=example,dc=org
+# 密碼錯會印出 ldap_bind: Invalid credentials (49)
+```
+
+**用新使用者登入 Keycloak**：不用重啟任何東西，直接到 http://localhost:8081 用 `carol / carol456` 登入，
+或 `scripts/get-token.sh carol carol456`。Keycloak 會即時去 LDAP 查。
+
+**刪除使用者（ldapdelete）**：記得先從群組移除
+
+```bash
+ldapmodify -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin <<'LDIF'
+dn: cn=users,ou=groups,dc=example,dc=org
+changetype: modify
+delete: member
+member: uid=carol,ou=people,dc=example,dc=org
+LDIF
+ldapdelete -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin uid=carol,ou=people,dc=example,dc=org
+```
+
+> 刪除後 Keycloak 的 Users 頁面可能還看得到 carol（匯入的快取副本）。到 User federation → openldap → Action → **Remove imported** 清掉，或等它下次同步。
+
+#### 10.1.4 圖形化介面：phpLDAPadmin（選用）
+
+不想打指令可以用網頁介面：
+
+```bash
+docker compose --profile tools up -d        # 多啟動 phpldapadmin 容器
+```
+
+打開 http://localhost:8389 → 左邊 **login** → Login DN 填 `cn=admin,dc=example,dc=org`，Password 填 `admin`。
+左側樹狀結構可以點開 `ou=people` 看每個使用者的屬性，也可以直接在介面上新增 / 修改 entry。
+
+#### 10.1.5 OpenLDAP 在本專案的角色
+
+OpenLDAP **只做一件事：存帳號、密碼、群組**。它完全不懂 OAuth / OIDC。
+Keycloak 透過 User Federation 連上它（設定在 `keycloak/realm-demo.json` 的 `components`，說明見 [7.6 節](#76-keycloak--openldapuser-federation-是什麼)）。
+這和企業實務一樣：帳號在 AD / LDAP，SSO 平台只負責協定。
+
+---
+
+### 10.2 Keycloak
+
+#### 10.2.1 Keycloak 是什麼？
+
+Keycloak 是 Red Hat 開源的**身分與存取管理（IAM）伺服器**，一次給你：OAuth 2.0 Authorization Server、OpenID Connect Provider、SAML IdP、
+登入頁、同意頁、使用者管理、社群登入（Google / GitHub …）、LDAP 整合、MFA 等等。
+在架構圖裡它同時扮演 **Authorization Server** 與 **OpenID Provider**。
+
+核心概念（管理後台左側選單就是照這些排的）：
+
+| 概念 | 意思 | 本專案 |
+|---|---|---|
+| **Realm** | 一個完全隔離的空間，有自己的使用者、clients、設定。`master` realm 是管 Keycloak 本身用的 | `demo` |
+| **Client** | 要跟 Keycloak 要 token 的應用程式 | `client-app`、`cli-demo` |
+| **User** | 使用者 | alice、bob（來自 LDAP） |
+| **Group** | 使用者群組，可以放進 token | `admins`、`users`（來自 LDAP） |
+| **Role** | 權限角色，分 realm role 與 client role | `admin`、`user`（本專案沒用到，留給練習） |
+| **Client Scope** | 一組「token 裡要放什麼」的定義，可被多個 client 共用 | 預設的 `profile`、`email`、`roles` |
+| **Protocol Mapper** | 把某個資料放進 token 的規則 | `groups` mapper、audience mapper |
+| **User Federation** | 從外部（LDAP / Kerberos）讀使用者 | `openldap` |
+| **Identity Provider** | 把登入委託給別人（Google、另一個 Keycloak …），和 Federation 不同 | 未使用 |
+
+#### 10.2.2 安裝方式
+
+**方式 A：Docker（本專案採用）**
+
+```yaml
+keycloak:
+  image: quay.io/keycloak/keycloak:26.8.1
+  command: ["start-dev", "--import-realm"]
+  environment:
+    KC_BOOTSTRAP_ADMIN_USERNAME: admin      # 第一次啟動建立的管理者
+    KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    KC_HEALTH_ENABLED: "true"               # 開啟 /health 端點（在 9000 port）
+  ports:
+    - "8180:8080"                           # 容器內 8080，本機用 8180
+  volumes:
+    - ./keycloak/realm-demo.json:/opt/keycloak/data/import/realm-demo.json:ro
+```
+
+| 選項 | 說明 |
+|---|---|
+| `start-dev` | **開發模式**：允許 HTTP、內建 H2 資料庫、不用設 hostname。**正式環境不能用** |
+| `start` | 正式模式：需要 HTTPS（或反向代理）、外部資料庫、`KC_HOSTNAME` |
+| `--import-realm` | 啟動時匯入 `/opt/keycloak/data/import/*.json`，**realm 已存在時會跳過** |
+| `KC_BOOTSTRAP_ADMIN_*` | Keycloak 26 的寫法（舊版叫 `KEYCLOAK_ADMIN`） |
+
+開發模式的資料存在容器內的 H2 檔案，`docker compose down -v` 就會清掉。正式環境接 PostgreSQL 的範例：
+
+```yaml
+command: ["start", "--optimized"]
+environment:
+  KC_DB: postgres
+  KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+  KC_DB_USERNAME: keycloak
+  KC_DB_PASSWORD: secret
+  KC_HOSTNAME: https://sso.example.com
+  KC_PROXY_HEADERS: xforwarded
+```
+
+**方式 B：下載 zip 在本機跑**（需要 JDK 21）
+
+```bash
+# 到 https://www.keycloak.org/downloads 下載 keycloak-26.x.x.zip
+unzip keycloak-26.8.1.zip && cd keycloak-26.8.1
+export KC_BOOTSTRAP_ADMIN_USERNAME=admin KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+bin/kc.sh start-dev --http-port 8180 --import-realm      # realm JSON 要放在 data/import/
+```
+
+但注意：這樣跑的 Keycloak 連 LDAP 時要把 `realm-demo.json` 的 `connectionUrl` 從 `ldap://openldap:389` 改成 `ldap://localhost:1389`。
+
+#### 10.2.3 管理後台導覽（照著點一遍）
+
+1. 打開 http://localhost:8180/admin ，帳號 `admin` / `admin`。
+2. 左上角 realm 下拉選單 **master → demo**。接下來的操作都在 demo realm。
+3. **Clients → client-app**：
+   - **Settings**：`Valid redirect URIs`（步驟 ③ 的 `redirect_uri` 必須在這裡）、`Consent required`（打開才有同意畫面）、`Client authentication`（On = confidential client）。
+   - **Credentials**：看 `Client secret`，和 `client-app/application.yml` 的 `client-secret` 一樣。
+   - **Client scopes**：列出這個 client 會用到哪些 scope。點 **client-app-dedicated** 看到我們加的 `groups` 與 `resource-server-audience` 兩個 mapper。
+   - **Client scopes → Evaluate**：選一個使用者（alice），按 **Generated access token**，**不用真的登入就能預覽 token 長什麼樣子**。改 mapper 時很好用。
+   - **Advanced → Proof Key for Code Exchange Code Challenge Method = S256**：強制 PKCE 的開關。
+4. **Users**：登入過的 LDAP 使用者會出現在這裡。點 alice → 上方會寫 `Federation link: openldap`，代表它來自 LDAP。
+   這裡**改不了密碼**（因為 `editMode: READ_ONLY`）。
+5. **Groups**：`admins`、`users`，是 group mapper 從 LDAP 同步過來的。點 admins → Members 可以看到 alice。
+6. **User federation → openldap**：
+   - **Test connection / Test authentication** 按鈕：確認 Keycloak 連得到 LDAP、bind 帳密正確。
+   - 右上角 **Action**：`Sync all users`（全部同步）、`Sync changed users`、`Unlink users`、`Remove imported`（清掉快取副本）。
+   - 下方 **Mappers** 分頁：username / first name / last name / email / groups 五個 mapper，和 `realm-demo.json` 的 `subComponents` 一一對應。
+7. **Realm settings → Tokens**：`Access Token Lifespan` 預設 5 分鐘（本專案在 JSON 設 300 秒），可以改短來觀察 refresh。
+8. **Realm settings → General → Endpoints → OpenID Endpoint Configuration**：就是 Discovery 文件的連結。
+9. **Sessions**：看目前誰登入、從哪個 client。可以在這裡強制登出。
+10. **Events → Event configs**：把 `Save events` 打開，之後 **Events → User events** 可以看到每次登入成功 / 失敗與原因，**除錯超好用**。
+
+#### 10.2.4 常用操作
+
+**手動新增一個 client（例如你自己的另一個 App）**
+
+Clients → **Create client** → Client type `OpenID Connect`、Client ID 填名字 → Next →
+`Client authentication` On（有 secret）、勾 `Standard flow`（Authorization Code）→ Next →
+`Valid redirect URIs` 填 `http://localhost:9090/login/oauth2/code/keycloak` 之類 → Save → 到 Credentials 分頁複製 secret。
+
+**手動新增一個「Keycloak 本地」使用者（不經過 LDAP）**
+
+Users → **Add user** → 填 Username → Create → **Credentials** 分頁 → Set password（把 Temporary 關掉）。
+這種使用者沒有 `Federation link`，密碼存在 Keycloak 自己的資料庫。LDAP 使用者與本地使用者可以同時存在。
+
+**匯出 realm 設定（備份 / 分享給同事）**
+
+Realm settings → 右上角 **Action → Partial export** → 勾 `Include groups and roles`、`Include clients` → Export，會下載 `realm-export.json`。
+把它放到 `keycloak/` 目錄取代 `realm-demo.json` 就能讓別人 `--import-realm` 重現你的設定。
+
+> 為什麼不用 `kc.sh export` 指令？開發模式的 H2 資料庫一次只能被一個程序開啟，伺服器跑著的時候執行 export 會報
+> `Database may be already in use`。用 Partial export 最簡單。（匯出檔不含使用者密碼與 LDAP bind 密碼，要自己補回去。）
+
+**用 Admin REST API 操作**（自動化 / 寫腳本時用）
+
+```bash
+# 1. 用 master realm 的 admin 帳號取得管理用 token
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:8180/realms/master/protocol/openid-connect/token \
+  -d client_id=admin-cli -d grant_type=password -d username=admin -d password=admin \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
+
+# 2. 列出 demo realm 的使用者
+curl -s http://localhost:8180/admin/realms/demo/users -H "Authorization: Bearer $ADMIN_TOKEN" | python3 -m json.tool
+
+# 3. 找到 LDAP federation 的 id，並觸發「同步全部使用者」
+FED_ID=$(curl -s "http://localhost:8180/admin/realms/demo/components?type=org.keycloak.storage.UserStorageProvider" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["id"])')
+curl -s -X POST "http://localhost:8180/admin/realms/demo/user-storage/$FED_ID/sync?action=triggerFullSync" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+# {"ignored":false,"added":0,"updated":2,"removed":0,"failed":0,"status":"0 imported users, 2 updated users"}
+```
+
+**本專案會用到的 Keycloak 端點**
+
+| 端點 | 用途 | 誰在用 |
+|---|---|---|
+| `/realms/demo/.well-known/openid-configuration` | Discovery：列出所有端點與支援的功能 | Spring（兩個都會讀） |
+| `/realms/demo/protocol/openid-connect/auth` | Authorization endpoint（步驟 ③） | 瀏覽器 |
+| `/realms/demo/protocol/openid-connect/token` | Token endpoint（步驟 ⑧⑨、refresh、password grant） | client-app、scripts |
+| `/realms/demo/protocol/openid-connect/certs` | JWKS：公鑰 | client-app（驗 id_token）、resource-server（驗 access_token） |
+| `/realms/demo/protocol/openid-connect/userinfo` | 用 access token 換使用者資料 | client-app（可選） |
+| `/realms/demo/protocol/openid-connect/logout` | End session（登出） | 瀏覽器 |
+| `/admin/realms/demo/...` | Admin REST API | 管理腳本 |
+| `http://localhost:8180/admin` | 管理後台 | 你 |
+
+#### 10.2.5 除錯小技巧
+
+- `docker compose logs -f keycloak`：本專案把 `org.keycloak.storage.ldap` 的 log 開到 debug，登入時可以看到 Keycloak 對 LDAP 做了什麼查詢。
+- 登入失敗時 log 會有一行 `type="LOGIN_ERROR" ... error="invalid_user_credentials"` 或 `error="cookie_not_found"` 之類，直接告訴你原因。
+- Events 功能（10.2.3 第 10 點）打開後，後台可以看每一次登入事件。
+
+---
+
+### 10.3 Mockoon
+
+#### 10.3.1 Mockoon 是什麼？
+
+Mockoon 是一個**做假 API（mock API）的工具**：你用圖形介面定義「哪個路徑、什麼條件、回什麼 JSON」，它就變成一個真的 HTTP server。
+適合前後端分離時前端先開發、整合測試時模擬第三方服務，或像本專案一樣，**快速生出一個需要 Bearer token 的下游 API** 而不用寫程式。
+
+它有三種形式，用的是**同一份定義檔**（JSON）：
+
+| 形式 | 用途 | 安裝 |
+|---|---|---|
+| **Mockoon Desktop** | 圖形介面，用來設計與編輯 | macOS：`brew install --cask mockoon`；或到 https://mockoon.com/download/ 下載 |
+| **Mockoon CLI** | 在終端機 / CI 執行定義檔 | `npm install -g @mockoon/cli`（需要 Node.js） |
+| **Docker image** `mockoon/cli` | 同 CLI，不用裝 Node | 本專案採用 |
+
+#### 10.3.2 安裝與啟動
+
+**方式 A：Docker（本專案採用）**
+
+```yaml
+mockoon:
+  image: mockoon/cli:9.9.0
+  command: ["--data", "/data/orders-api.json", "--port", "3001"]   # 讀哪個定義檔、聽哪個 port
+  ports:
+    - "3100:3001"
+  volumes:
+    - ./mockoon/orders-api.json:/data/orders-api.json:ro
+```
+
+單獨啟動：
+
+```bash
+docker run -d --name mockoon -p 3100:3001 \
+  -v "$PWD/mockoon/orders-api.json:/data/orders-api.json:ro" \
+  mockoon/cli:9.9.0 --data /data/orders-api.json --port 3001
+```
+
+**方式 B：Node.js CLI**
+
+```bash
+npm install -g @mockoon/cli
+mockoon-cli start --data ./mockoon/orders-api.json --port 3100
+# 停止：Ctrl + C。其他選項（背景執行、多個定義檔、log 設定）見 mockoon-cli start --help
+```
+
+**方式 C：Desktop**
+
+安裝後 **File → Open local environment** → 選 `mockoon/orders-api.json` → 左上角綠色 ▶ 按鈕啟動（會聽 JSON 裡設定的 port 3001，可以在介面上改）。
+
+#### 10.3.3 看懂定義檔 `mockoon/orders-api.json`
+
+一個 environment（環境）= 一組 routes（路由）；每個 route 有一個或多個 responses（回應）；每個 response 可以有 rules（規則）決定什麼時候用它。
+
+```
+Environment "Orders API"  (port 3001)
+├── GET /health
+│   └── Response 200 (default)              {"status":"UP"}
+├── GET /orders
+│   ├── Response 200  rules: header Authorization 符合 ^Bearer .+     ← 有 token
+│   └── Response 401  (default)  + WWW-Authenticate header            ← 沒 token
+└── GET /orders/:id                                                    ← 路徑參數
+    ├── Response 200  rules: 同上；body 用 {{urlParam 'id'}} 與 {{faker ...}} 產生假資料
+    └── Response 401  (default)
+```
+
+對應到 JSON 裡的重點欄位：
+
+```jsonc
+{
+  "routes": [{
+    "method": "get",
+    "endpoint": "orders",                         // 路徑（不含開頭的 /）
+    "responses": [
+      {
+        "statusCode": 200,
+        "headers": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": "{ \"requested_by\": \"{{jwtPayload (header 'Authorization') 'preferred_username'}}\", ... }",
+        "rules": [{                                // 符合規則才用這個回應
+          "target": "header", "modifier": "Authorization",
+          "operator": "regex", "value": "^Bearer .+"
+        }],
+        "default": false
+      },
+      {
+        "statusCode": 401,
+        "default": true                            // 沒有任何 response 的規則符合時用這個
+      }
+    ]
+  }]
+}
+```
+
+回應的 `body` 可以用**模板語法**（Handlebars 風格），常用的：
+
+| 語法 | 效果 |
+|---|---|
+| `{{header 'Authorization'}}` | 讀 request header |
+| `{{jwtPayload (header 'Authorization') 'sub'}}` | 把 Bearer token 的 payload 解開，取某個 claim（**不驗簽章**） |
+| `{{queryParam 'page'}}` / `{{urlParam 'id'}}` | 讀 query string / 路徑參數（路徑寫成 `orders/:id`） |
+| `{{body 'item'}}` | 讀 request JSON body 的欄位 |
+| `{{faker 'person.firstName'}}` | 產生假資料 |
+| `{{now 'yyyy-MM-dd'}}` | 現在時間 |
+| `{{{stringify (jwtPayload (header 'Authorization') 'groups')}}}` | 把陣列 / 物件轉成 JSON 字串（三層大括號避免被 HTML escape） |
+
+#### 10.3.4 動手改一個 Mock
+
+先試試專案內建的路徑參數路由（`:id` 會被換成你給的值，`faker` 每次產生不同假資料）：
+
+```bash
+scripts/get-token.sh alice alice123          # 複製最後一行 export TOKEN=... 貼到終端機
+curl -s http://localhost:3100/orders/42 -H "Authorization: Bearer $TOKEN"
+# { "id": 42, "item": "Ergonomic Steel Fish", "amount": 8152, "owner": "alice" }
+```
+
+接著自己加一條新路由，例如 `POST /orders`（建立訂單）：
+
+1. 用 Desktop 開啟 `mockoon/orders-api.json`，按路由列表上方的 **+** → method `POST`、path `orders`。
+2. **Body** 填入（把 request body 的欄位回顯出來）：
+   ```json
+   { "created": true, "item": "{{body 'item'}}", "owner": "{{jwtPayload (header 'Authorization') 'preferred_username'}}" }
+   ```
+   並在 **Status** 選 `201`、**Headers** 加 `Content-Type: application/json`。
+3. **Rules** 分頁加一條規則：`Header` / `Authorization` / `regex` / `^Bearer .+`；再按 **Add response** 新增一個 `401` 的回應並把它設為 **default**（旗子圖示）。
+4. 儲存（Desktop 會直接寫回 JSON 檔；也可以不用 Desktop，直接照 `orders-api.json` 裡既有路由的格式複製一段來改）。
+5. 重啟容器讓 CLI 重新讀檔並測試：
+   ```bash
+   docker compose restart mockoon
+   curl -s -X POST http://localhost:3100/orders -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" -d '{"item":"Mouse"}'
+   ```
+
+看 Mockoon 收到了什麼請求：`docker compose logs -f mockoon`。每筆 request 都會印成一行 JSON（`"message":"Transaction recorded"`），
+裡面有 `requestMethod`、`requestPath`、`responseStatus` 等欄位。
+
+#### 10.3.5 Mockoon 在本專案的角色與限制
+
+- **角色**：架構圖裡的第二個 Protected Resource，展示「任何後端只要檢查 `Authorization: Bearer` 就能接進 OAuth 體系」。
+- **限制**：Mockoon 的規則只能比對字串 / 正規表示式，**無法驗證 JWT 簽章**，也不會檢查 `exp`、`aud`。
+  所以它適合當 mock，不適合當真正的 Resource Server；真正的驗證示範在 `resource-server/`。
+- 想讓 mock 更「像真的」：可以用 `{{jwtPayload ...}}` 把 token 內容回顯，或加一條規則要求 `Authorization` 符合 JWT 的三段格式 `^Bearer [\w-]+\.[\w-]+\.[\w-]+$`。
+
+---
+
+## 11. 常見問題 FAQ
 
 **Q：`docker compose up` 時 Keycloak 一直 restart？**
 看 `docker compose logs keycloak`。常見原因是 port 8180 被佔用，或 OpenLDAP 尚未就緒（compose 已設定 healthcheck 等待，通常不會）。
@@ -685,9 +1180,9 @@ Spring Security 7 新增的「驗證因子」權限，表示這次是用 Bearer 
 
 ---
 
-## 11. 延伸練習
+## 12. 延伸練習
 
-1. **新增一個 LDAP 使用者**：在 `openldap/bootstrap.ldif` 加一個 `carol`，`docker compose down -v && docker compose up -d`，用 carol 登入。
+1. **新增一個 LDAP 使用者**：用 [10.1.3 節](#1013-常用操作指令都可以直接對本專案的-ldap-執行)的 `ldapadd` 新增 `carol`（不用重啟），用 carol 登入；或改 `openldap/bootstrap.ldif` 後 `docker compose down -v && docker compose up -d`。
 2. **拿掉 PKCE 看看會怎樣**：註解掉 `SecurityConfig.java` 的 `withPkce()`，觀察 Keycloak 的錯誤訊息。
 3. **拿掉 audience 檢查**：把 `resource-server/application.yml` 的 `audiences` 刪掉，想想看這有什麼風險。
 4. **改用 realm role 做授權**：在 Keycloak 後台把 `admin` role 指派給 alice，改 `SecurityConfig.java` 用 `hasRole("admin")`。
@@ -697,7 +1192,7 @@ Spring Security 7 新增的「驗證因子」權限，表示這次是用 Bearer 
 
 ---
 
-## 12. 清理環境
+## 13. 清理環境
 
 ```bash
 # 停掉 Spring Boot：在兩個終端機按 Ctrl + C
@@ -711,7 +1206,7 @@ docker compose down -v
 
 ---
 
-## 13. 參考資料
+## 14. 參考資料
 
 - [RFC 6749 - The OAuth 2.0 Authorization Framework](https://datatracker.ietf.org/doc/html/rfc6749)
 - [RFC 7636 - Proof Key for Code Exchange (PKCE)](https://datatracker.ietf.org/doc/html/rfc7636)
