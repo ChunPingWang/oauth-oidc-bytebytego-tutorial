@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.2</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.example</groupId>
+  <artifactId>client-app</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>client-app</name>
+  <description>架構圖中的 Client App：OAuth 2.0 Authorization Code + PKCE / OIDC Relying Party</description>
+
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+
+  <dependencies>
+    <!-- Spring MVC（內含內嵌 Tomcat） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webmvc</artifactId>
+    </dependency>
+    <!-- 伺服器端網頁模板 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-thymeleaf</artifactId>
+    </dependency>
+    <!-- OAuth 2.0 Client + OIDC Relying Party（登入流程、token 管理） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-client</artifactId>
+    </dependency>
+    <!-- RestClient：用來帶 Bearer token 呼叫 Protected Resource -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-restclient</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,216 @@
+{
+  "realm": "demo",
+  "displayName": "OAuth 2.0 / OIDC Demo",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      { "name": "user", "description": "一般使用者" },
+      { "name": "admin", "description": "管理員" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "client-app",
+      "name": "Spring Boot Client App",
+      "description": "架構圖中的 Client App：使用 Authorization Code + PKCE 取得 token",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "client-app-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": true,
+      "rootUrl": "http://localhost:8081",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:8081/login/oauth2/code/keycloak"
+      ],
+      "webOrigins": [
+        "http://localhost:8081"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8081/*",
+        "display.on.consent.screen": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "resource-server-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "resource-server",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "cli-demo",
+      "name": "CLI Demo (只用於教學實驗)",
+      "description": "開啟 Direct Access Grant (password grant)，方便用 curl 直接換取 token 觀察內容。正式環境不建議使用。",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "resource-server-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "resource-server",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "name": "openldap",
+        "providerId": "ldap",
+        "subComponents": {
+          "org.keycloak.storage.ldap.mappers.LDAPStorageMapper": [
+            {
+              "name": "username",
+              "providerId": "user-attribute-ldap-mapper",
+              "config": {
+                "ldap.attribute": ["uid"],
+                "user.model.attribute": ["username"],
+                "is.mandatory.in.ldap": ["true"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["false"]
+              }
+            },
+            {
+              "name": "first name",
+              "providerId": "user-attribute-ldap-mapper",
+              "config": {
+                "ldap.attribute": ["givenName"],
+                "user.model.attribute": ["firstName"],
+                "is.mandatory.in.ldap": ["false"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["true"]
+              }
+            },
+            {
+              "name": "last name",
+              "providerId": "user-attribute-ldap-mapper",
+              "config": {
+                "ldap.attribute": ["sn"],
+                "user.model.attribute": ["lastName"],
+                "is.mandatory.in.ldap": ["false"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["true"]
+              }
+            },
+            {
+              "name": "email",
+              "providerId": "user-attribute-ldap-mapper",
+              "config": {
+                "ldap.attribute": ["mail"],
+                "user.model.attribute": ["email"],
+                "is.mandatory.in.ldap": ["false"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["false"]
+              }
+            },
+            {
+              "name": "groups",
+              "providerId": "group-ldap-mapper",
+              "config": {
+                "groups.dn": ["ou=groups,dc=example,dc=org"],
+                "group.name.ldap.attribute": ["cn"],
+                "group.object.classes": ["groupOfNames"],
+                "membership.ldap.attribute": ["member"],
+                "membership.attribute.type": ["DN"],
+                "membership.user.ldap.attribute": ["uid"],
+                "mode": ["READ_ONLY"],
+                "user.roles.retrieve.strategy": ["LOAD_GROUPS_BY_MEMBER_ATTRIBUTE"],
+                "memberof.ldap.attribute": ["memberOf"],
+                "preserve.group.inheritance": ["false"],
+                "ignore.missing.groups": ["false"],
+                "drop.non.existing.groups.during.sync": ["false"],
+                "groups.path": ["/"]
+              }
+            }
+          ]
+        },
+        "config": {
+          "enabled": ["true"],
+          "priority": ["0"],
+          "editMode": ["READ_ONLY"],
+          "syncRegistrations": ["false"],
+          "importEnabled": ["true"],
+          "vendor": ["other"],
+          "usernameLDAPAttribute": ["uid"],
+          "rdnLDAPAttribute": ["uid"],
+          "uuidLDAPAttribute": ["entryUUID"],
+          "userObjectClasses": ["inetOrgPerson, organizationalPerson"],
+          "connectionUrl": ["ldap://openldap:389"],
+          "usersDn": ["ou=people,dc=example,dc=org"],
+          "authType": ["simple"],
+          "bindDn": ["cn=admin,dc=example,dc=org"],
+          "bindCredential": ["admin"],
+          "searchScope": ["1"],
+          "useTruststoreSpi": ["ldapsOnly"],
+          "connectionPooling": ["true"],
+          "pagination": ["false"],
+          "batchSizeForSync": ["1000"],
+          "fullSyncPeriod": ["-1"],
+          "changedSyncPeriod": ["-1"],
+          "allowKerberosAuthentication": ["false"],
+          "trustEmail": ["true"],
+          "validatePasswordPolicy": ["false"]
+        }
+      }
+    ]
+  }
+}

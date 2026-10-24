@@ -1,0 +1,38 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: client-app
+  security:
+    oauth2:
+      client:
+        registration:
+          # "keycloak" 是 registrationId，會出現在 redirect-uri 與登入網址中：
+          #   /oauth2/authorization/keycloak  -> 觸發登入（圖中步驟 2）
+          #   /login/oauth2/code/keycloak     -> redirect_uri（圖中步驟 6）
+          keycloak:
+            client-id: client-app
+            client-secret: client-app-secret
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            # 有 "openid" 這個 scope，就是 OIDC 流程，會拿到 id_token
+            scope: openid, profile, email
+            client-name: Keycloak
+        provider:
+          keycloak:
+            # Spring 會自動抓 {issuer-uri}/.well-known/openid-configuration
+            # 取得 authorization / token / jwks / userinfo 等端點位置
+            issuer-uri: http://localhost:8180/realms/demo
+            user-name-attribute: preferred_username
+
+# 自訂設定：要呼叫的兩個 Protected Resource
+app:
+  resource-server-url: http://localhost:8082
+  mockoon-url: http://localhost:3100
+
+logging:
+  level:
+    com.example.clientapp: DEBUG
+    # 想看 Spring Security 內部怎麼處理 OAuth2 流程可以打開下面這行
+    # org.springframework.security: DEBUG

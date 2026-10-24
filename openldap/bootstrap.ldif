@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------
+# OpenLDAP 初始資料 (LDIF)
+# Base DN 由 docker-compose 的 LDAP_DOMAIN=example.org 決定 => dc=example,dc=org
+# 這些使用者「只存在於 LDAP」，Keycloak 透過 User Federation 讀取並驗證密碼。
+# ---------------------------------------------------------------
+
+# 組織單位：放使用者
+dn: ou=people,dc=example,dc=org
+objectClass: organizationalUnit
+ou: people
+
+# 組織單位：放群組
+dn: ou=groups,dc=example,dc=org
+objectClass: organizationalUnit
+ou: groups
+
+# 使用者 alice（屬於 admins + users 群組）
+dn: uid=alice,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: alice
+cn: Alice Wang
+sn: Wang
+givenName: Alice
+displayName: Alice Wang
+mail: alice@example.org
+userPassword: alice123
+
+# 使用者 bob（只屬於 users 群組）
+dn: uid=bob,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: bob
+cn: Bob Chen
+sn: Chen
+givenName: Bob
+displayName: Bob Chen
+mail: bob@example.org
+userPassword: bob123
+
+# 群組 admins
+dn: cn=admins,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+objectClass: top
+cn: admins
+description: 系統管理員
+member: uid=alice,ou=people,dc=example,dc=org
+
+# 群組 users
+dn: cn=users,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+objectClass: top
+cn: users
+description: 一般使用者
+member: uid=alice,ou=people,dc=example,dc=org
+member: uid=bob,ou=people,dc=example,dc=org

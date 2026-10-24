@@ -1,0 +1,126 @@
+{
+  "uuid": "8c3a2d7e-1f44-4a7e-9c3b-2d1e0f9a8b71",
+  "lastMigration": 33,
+  "name": "Orders API (Mock Protected Resource)",
+  "endpointPrefix": "",
+  "latency": 0,
+  "port": 3001,
+  "hostname": "",
+  "folders": [],
+  "routes": [
+    {
+      "uuid": "5f1c7d3a-9b2e-4c4d-8a6f-0e2b1c3d4e5f",
+      "type": "http",
+      "documentation": "健康檢查，不需要 token",
+      "method": "get",
+      "endpoint": "health",
+      "responses": [
+        {
+          "uuid": "a1b2c3d4-0001-4000-8000-000000000001",
+          "body": "{ \"status\": \"UP\", \"service\": \"mockoon-orders-api\" }",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "OK",
+          "headers": [ { "key": "Content-Type", "value": "application/json" } ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null,
+      "streamingMode": null,
+      "streamingInterval": 0
+    },
+    {
+      "uuid": "6a2d8e4b-0c3f-4d5e-9b7a-1f3c2d4e5f60",
+      "type": "http",
+      "documentation": "受保護的訂單清單：必須帶 Authorization: Bearer <access_token>",
+      "method": "get",
+      "endpoint": "orders",
+      "responses": [
+        {
+          "uuid": "a1b2c3d4-0002-4000-8000-000000000001",
+          "body": "{\n  \"note\": \"Mockoon 只檢查 Authorization header 的格式並解析 JWT payload，不會驗證簽章。真正的簽章驗證請看 resource-server。\",\n  \"requested_by\": \"{{jwtPayload (header 'Authorization') 'preferred_username'}}\",\n  \"subject\": \"{{jwtPayload (header 'Authorization') 'sub'}}\",\n  \"audience\": {{{stringify (jwtPayload (header 'Authorization') 'aud')}}},\n  \"groups\": {{{stringify (jwtPayload (header 'Authorization') 'groups')}}},\n  \"orders\": [\n    { \"id\": 1001, \"item\": \"Keyboard\", \"amount\": 1200, \"status\": \"SHIPPED\" },\n    { \"id\": 1002, \"item\": \"Monitor\", \"amount\": 6800, \"status\": \"PROCESSING\" },\n    { \"id\": 1003, \"item\": \"USB-C Cable\", \"amount\": 350, \"status\": \"DELIVERED\" }\n  ]\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "有 Bearer token -> 回傳訂單",
+          "headers": [ { "key": "Content-Type", "value": "application/json" } ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [
+            {
+              "target": "header",
+              "modifier": "Authorization",
+              "value": "^Bearer .+",
+              "invert": false,
+              "operator": "regex"
+            }
+          ],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "a1b2c3d4-0002-4000-8000-000000000002",
+          "body": "{ \"error\": \"unauthorized\", \"message\": \"缺少 Authorization: Bearer <token> header\" }",
+          "latency": 0,
+          "statusCode": 401,
+          "label": "沒有 Bearer token -> 401",
+          "headers": [
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "WWW-Authenticate", "value": "Bearer realm=\"orders-api\"" }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null,
+      "streamingMode": null,
+      "streamingInterval": 0
+    }
+  ],
+  "rootChildren": [
+    { "type": "route", "uuid": "5f1c7d3a-9b2e-4c4d-8a6f-0e2b1c3d4e5f" },
+    { "type": "route", "uuid": "6a2d8e4b-0c3f-4d5e-9b7a-1f3c2d4e5f60" }
+  ],
+  "proxyMode": false,
+  "proxyHost": "",
+  "proxyRemovePrefix": false,
+  "tlsOptions": {
+    "enabled": false,
+    "type": "CERT",
+    "pfxPath": "",
+    "certPath": "",
+    "keyPath": "",
+    "caPath": "",
+    "passphrase": ""
+  },
+  "cors": true,
+  "headers": [],
+  "proxyReqHeaders": [],
+  "proxyResHeaders": [],
+  "data": [],
+  "callbacks": []
+}

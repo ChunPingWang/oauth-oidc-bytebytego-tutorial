@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>呼叫 Protected Resource - Client App</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>呼叫 Protected Resource</h1>
+    <nav>
+      <a th:href="@{/}">首頁</a>
+      <a th:href="@{/profile}">我的 Token</a>
+      <a th:href="@{/call/rs-profile}">呼叫 API</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <h2><span class="badge oauth">OAuth 2.0</span> App call with Bearer token</h2>
+    <p class="muted">選一個目標，Client App 會在伺服器端用 <code>RestClient</code> 帶著 access_token 呼叫它：</p>
+    <p>
+      <a class="btn" th:href="@{/call/rs-public}">Resource Server /api/public（不用 token）</a>
+      <a class="btn" th:href="@{/call/rs-profile}">Resource Server /api/profile</a>
+      <a class="btn" th:href="@{/call/rs-admin}">Resource Server /api/admin/stats（需 admins 群組）</a>
+      <a class="btn" th:href="@{/call/mockoon-orders}">Mockoon /orders</a>
+    </p>
+    <p>
+      <a class="btn gray" th:href="@{/call/rs-profile/no-token}">故意不帶 token 呼叫 Resource Server</a>
+      <a class="btn gray" th:href="@{/call/mockoon-orders/no-token}">故意不帶 token 呼叫 Mockoon</a>
+    </p>
+  </div>
+
+  <div class="card" th:if="${error != null}">
+    <h2 class="status err">錯誤</h2>
+    <p th:text="${error}"></p>
+  </div>
+
+  <div class="card" th:if="${status != null}">
+    <h2>結果</h2>
+    <table>
+      <tr><th>請求</th><td>GET <span th:text="${url}"></span></td></tr>
+      <tr><th>Authorization header</th>
+          <td th:text="${withToken} ? 'Bearer <access_token>（有帶）' : '（沒有帶）'"></td></tr>
+      <tr><th>HTTP 狀態</th>
+          <td><span class="status" th:classappend="${status < 400} ? 'ok' : 'err'" th:text="${status}"></span>
+              <span class="muted" th:if="${status == 401}">401 = 沒有 token 或 token 無效</span>
+              <span class="muted" th:if="${status == 403}">403 = token 有效，但權限不足（看 groups claim）</span>
+          </td></tr>
+      <tr th:if="${wwwAuthenticate != null}"><th>WWW-Authenticate</th><td th:text="${wwwAuthenticate}"></td></tr>
+    </table>
+    <p class="muted">回應內容：</p>
+    <pre th:text="${body}"></pre>
+  </div>
+</div>
+</body>
+</html>

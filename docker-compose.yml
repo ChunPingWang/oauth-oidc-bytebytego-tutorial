@@ -1,0 +1,54 @@
+# ------------------------------------------------------------------
+# 基礎設施：OpenLDAP (使用者資料庫) + Keycloak (Authorization Server /
+# OpenID Provider) + Mockoon (Mock 的 Protected Resource)
+#
+# Spring Boot 的 client-app 與 resource-server 直接在本機用 Maven 啟動，
+# 這樣瀏覽器與後端看到的 Keycloak 網址都是 http://localhost:8180，
+# 初學者不需要處理容器內外網址不一致 (issuer mismatch) 的問題。
+# ------------------------------------------------------------------
+services:
+
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: openldap
+    command: ["--copy-service"]        # 讓 image 載入下面掛進去的自訂 LDIF
+    environment:
+      LDAP_ORGANISATION: "Example Org"
+      LDAP_DOMAIN: "example.org"       # => Base DN: dc=example,dc=org
+      LDAP_ADMIN_PASSWORD: "admin"     # => 管理者 DN: cn=admin,dc=example,dc=org
+      LDAP_TLS: "false"
+    ports:
+      - "1389:389"                     # 本機用 ldapsearch 時連 localhost:1389
+    volumes:
+      - ./openldap/bootstrap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=org -D cn=admin,dc=example,dc=org -w admin uid=alice | grep -q 'uid: alice'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    container_name: keycloak
+    command: ["start-dev", "--import-realm"]   # 開發模式 + 啟動時匯入 realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: "info,org.keycloak.storage.ldap:debug"
+    ports:
+      - "8180:8080"                   # 本機用 http://localhost:8180 連 Keycloak
+    volumes:
+      - ./keycloak/realm-demo.json:/opt/keycloak/data/import/realm-demo.json:ro
+    depends_on:
+      openldap:
+        condition: service_healthy
+
+  mockoon:
+    image: mockoon/cli:9.9.0
+    container_name: mockoon
+    command: ["--data", "/data/orders-api.json", "--port", "3001"]
+    ports:
+      - "3100:3001"                   # 本機用 http://localhost:3100 連 Mockoon
+    volumes:
+      - ./mockoon/orders-api.json:/data/orders-api.json:ro

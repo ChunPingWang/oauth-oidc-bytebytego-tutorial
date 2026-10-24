@@ -1,0 +1,22 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: resource-server
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # 啟動時 Spring 會去 {issuer-uri}/.well-known/openid-configuration 找 jwks_uri，
+          # 之後用 JWKS 裡的公鑰驗證每一個 access token 的簽章，並檢查 iss 是否相同。
+          issuer-uri: http://localhost:8180/realms/demo
+          # 額外檢查 token 的 aud 必須包含 "resource-server"
+          #（Keycloak realm 裡的 audience mapper 會把它放進 access token）
+          audiences: resource-server
+
+logging:
+  level:
+    com.example.resourceserver: DEBUG
+    # 想看每個 token 被拒絕的原因可以打開：
+    # org.springframework.security.oauth2: DEBUG

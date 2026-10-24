@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>我的 Token - Client App</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>我的 Token <span class="muted">— 登入者：<span th:text="${user.preferredUsername}"></span></span></h1>
+    <nav>
+      <a th:href="@{/}">首頁</a>
+      <a th:href="@{/profile}">我的 Token</a>
+      <a th:href="@{/call/rs-profile}">呼叫 API</a>
+    </nav>
+  </header>
+
+  <!-- ================= OIDC：ID Token ================= -->
+  <div class="card oidc">
+    <h2><span class="badge oidc">OIDC</span> ID Token — 回答「你是誰」</h2>
+    <p class="muted">
+      這是 OpenID Connect 加在 OAuth 2.0 之上的東西。Client App 在步驟 10 驗證了它的簽章、
+      <code>iss</code>、<code>aud</code>、<code>exp</code>、<code>nonce</code> 之後才建立登入 session。
+      ID Token 是給 <strong>Client App 自己看的</strong>，不應該拿去呼叫 API。
+    </p>
+    <table>
+      <tr th:each="c : ${idTokenClaims}">
+        <th th:text="${c.key}"></th>
+        <td th:text="${c.value}"></td>
+      </tr>
+    </table>
+    <details>
+      <summary>原始 JWT（header.payload.signature）</summary>
+      <p class="jwt">
+        <span class="h" th:text="${#strings.substringBefore(idToken.raw, '.')}"></span>.<span class="p" th:text="${#strings.substringBefore(#strings.substringAfter(idToken.raw, '.'), '.')}"></span>.<span class="s" th:text="${idToken.signature}"></span>
+      </p>
+      <p class="muted">Header（演算法 + 用哪把 key 簽章 kid）：</p>
+      <pre th:text="${idToken.header}"></pre>
+      <p class="muted">Payload（claims）：</p>
+      <pre th:text="${idToken.payload}"></pre>
+    </details>
+  </div>
+
+  <!-- ================= OAuth 2.0：Access Token ================= -->
+  <div class="card">
+    <h2><span class="badge oauth">OAuth 2.0</span> Access Token — 回答「可以做什麼」</h2>
+    <p class="muted">
+      Client App 在步驟 9 拿到它，之後呼叫 Protected Resource 時放在
+      <code>Authorization: Bearer ...</code> header。Resource Server 會自己去 Keycloak 的 JWKS 端點抓公鑰驗簽章，
+      並檢查 <code>aud</code> 是否包含自己（resource-server）。
+    </p>
+    <table>
+      <tr><th>到期時間</th><td th:text="${accessTokenExpiresAt}"></td></tr>
+      <tr><th>scopes</th><td th:text="${scopes}"></td></tr>
+      <tr><th>有 refresh_token？</th><td th:text="${hasRefreshToken} ? '有（access_token 過期時 Spring 會自動用它換新的）' : '沒有'"></td></tr>
+    </table>
+    <details open>
+      <summary>Access Token payload（Keycloak 的 access token 剛好也是 JWT，所以看得懂）</summary>
+      <pre th:text="${accessToken.payload}"></pre>
+    </details>
+    <details>
+      <summary>原始 Access Token</summary>
+      <p class="jwt" th:text="${accessToken.raw}"></p>
+    </details>
+    <p>
+      <a class="btn" th:href="@{/call/rs-profile}">拿這個 token 去呼叫 Resource Server</a>
+      <a class="btn" th:href="@{/call/mockoon-orders}">拿這個 token 去呼叫 Mockoon</a>
+    </p>
+  </div>
+
+  <form th:action="@{/logout}" method="post">
+    <button class="btn gray" type="submit">登出（同時登出 Keycloak）</button>
+  </form>
+</div>
+</body>
+</html>

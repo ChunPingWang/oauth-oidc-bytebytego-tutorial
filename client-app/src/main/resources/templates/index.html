@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>OAuth 2.0 + OIDC Demo - Client App</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Client App <span class="muted">(Spring Boot, port 8081)</span></h1>
+    <nav>
+      <a th:href="@{/}">首頁</a>
+      <a th:href="@{/profile}">我的 Token</a>
+      <a th:href="@{/call/rs-profile}">呼叫 API</a>
+    </nav>
+  </header>
+
+  <div class="card oidc" th:if="${user == null}">
+    <h2>你還沒登入</h2>
+    <p>按下「Sign in」就是架構圖裡 OIDC 的<strong>步驟 1</strong>。接著會發生：</p>
+    <ol>
+      <li>Client App 回 <code>302</code>，把瀏覽器導向 Keycloak（步驟 2 → 3）</li>
+      <li>你在 Keycloak 的登入頁輸入帳號密碼，Keycloak 去 OpenLDAP 驗證（步驟 4）</li>
+      <li>Keycloak 把瀏覽器帶著 <code>code</code> + <code>state</code> 導回來（步驟 5 → 6）</li>
+      <li>Client App 驗證 state、用 code（+ PKCE code_verifier）換 token（步驟 7 → 9）</li>
+      <li>Client App 驗證 id_token 後建立 session，你就登入了（步驟 10）</li>
+    </ol>
+    <!-- /oauth2/authorization/{registrationId} 是 Spring Security 內建的登入觸發網址 -->
+    <a class="btn green" th:href="@{/oauth2/authorization/keycloak}">Sign in with Keycloak</a>
+    <p class="muted">測試帳號（存在 OpenLDAP 裡）：<code>alice / alice123</code>（admins 群組）、<code>bob / bob123</code>（一般使用者）</p>
+  </div>
+
+  <div class="card oidc" th:if="${user != null}">
+    <h2>你已登入：<span th:text="${user.preferredUsername}">user</span></h2>
+    <p>姓名：<span th:text="${user.fullName}"></span>　Email：<span th:text="${user.email}"></span></p>
+    <a class="btn" th:href="@{/profile}">查看 ID Token / Access Token</a>
+    <a class="btn" th:href="@{/call/rs-profile}">用 Access Token 呼叫 API</a>
+    <form th:action="@{/logout}" method="post" style="display:inline">
+      <button class="btn gray" type="submit">登出</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>這個 Demo 的元件</h2>
+    <table>
+      <tr><th>架構圖角色</th><th>實作元件</th><th>網址</th></tr>
+      <tr><td>Browser</td><td>你的瀏覽器</td><td>-</td></tr>
+      <tr><td>Client App</td><td>Spring Boot (oauth2-client)</td><td>http://localhost:8081</td></tr>
+      <tr><td>Authorization Server / OpenID Provider</td><td>Keycloak</td><td>http://localhost:8180</td></tr>
+      <tr><td>使用者資料庫</td><td>OpenLDAP</td><td>ldap://localhost:1389</td></tr>
+      <tr><td>Protected Resource（真的驗簽章）</td><td>Spring Boot (oauth2-resource-server)</td><td>http://localhost:8082</td></tr>
+      <tr><td>Protected Resource（Mock）</td><td>Mockoon</td><td>http://localhost:3100</td></tr>
+    </table>
+  </div>
+</div>
+</body>
+</html>
